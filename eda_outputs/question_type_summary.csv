@@ -1,0 +1,7 @@
+﻿question_type,rows,unique_target_classes,top_target_class,top_target_class_count
+count,1746,55,2개,686
+material,1610,499,플라스틱,352
+classification,1167,467,플라스틱 병,81
+color,300,73,파란색,61
+location,141,128,플라스틱 컵,6
+other,109,77,노란색,7

@@ -246,44 +246,159 @@ validate_runtime()
 print("Using GPU:", torch.cuda.get_device_name(0))
 
 # %% [markdown]
+# ## User Controls
+#
+# 아래 값들만 바꾸면 주요 실험 설정을 제어할 수 있습니다.
+# 초보자는 이 셀만 수정하고, 아래쪽 상세 구현은 건드리지 않는 것을 권장합니다.
+
+# %%
+# type: str
+USER_MODEL_PROFILE = "qwen35_2b_unsloth"
+# 선택 가능:
+# - "qwen35_2b_unsloth": 반복 실험용 저비용 프로파일
+# - "qwen35_9b_unsloth": A100 권장 대형 프로파일
+# - "legacy_qwen3_vl_2b": 기존 Qwen3-VL-2B baseline
+
+# type: str
+USER_TRAIN_MODE = "smoke"
+# 선택 가능:
+# - "smoke": 작은 샘플로 빠르게 학습 + validation 수행
+# - "train_valid_split": train 전체를 train/valid로 나눠서 학습 + validation 수행
+# - "train_all_for_submission": train 전체로 학습하고 validation 생략 후 full inference 수행
+
+# type: int
+USER_SUBSAMPLE_SIZE = 200
+# smoke 모드에서만 사용합니다.
+
+# type: int | None
+USER_IMAGE_SIZE = None
+# None이면 모델 프로파일 기본값을 사용합니다.
+
+# type: float
+USER_CENTER_CROP_RATIO = 0.92
+# type: bool
+USER_BUILD_PREPROCESSED_CACHE = True
+# type: int
+USER_PREPROCESS_PREVIEW_SAMPLES = 6
+
+# type: float
+USER_LR = 1e-4
+# type: int
+USER_NUM_EPOCHS = 1
+# type: int | None
+USER_BATCH_SIZE = None
+# type: int | None
+USER_GRAD_ACCUM = None
+# None이면 모델 프로파일 기본값을 사용합니다.
+
+# trainer checkpoint 저장 설정
+# type: bool
+USER_SAVE_CHECKPOINTS_EACH_EPOCH = False
+# True면 epoch가 끝날 때마다 trainer checkpoint를 저장합니다.
+
+# type: int | None
+USER_SAVE_TOTAL_LIMIT = 2
+# 저장할 checkpoint 개수 제한입니다. None이면 제한 없이 저장합니다.
+
+# type: bool
+USER_SAVE_FINAL_MODEL = True
+# True면 학습 종료 후 최종 모델/processor를 final 폴더에 저장합니다.
+
+# %% [markdown]
 # ## Config
 
 # %%
 EXPERIMENT_ID = "E_BASELINE_UNSLOTH_QWEN35_9B_COLAB_V1"
 BASE_RUN_NAME = "baseline_colab"
-EXPERIMENT_PURPOSE = (
-    "Baseline VQA fine-tuning on Colab T4 with Unsloth Qwen3-VL-2B MVP setup"
-)
-CHANGED_FIELDS = "platform=colab,framework=unsloth,model=Qwen3-VL-2B,runtime=T4"
+EXPERIMENT_PURPOSE = "Profile-based VQA fine-tuning on Colab with Unsloth vision models"
+CHANGED_FIELDS = "platform=colab,framework=unsloth,model=profile_selected"
 
-MODEL_ID = os.environ.get(
-    "UNSLOTH_VQA_MODEL_ID",
-    "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit",
+MODEL_PROFILES = {
+    "qwen35_2b_unsloth": {
+        "model_id": "unsloth/Qwen3.5-2B",
+        "load_in_16bit": False,
+        "load_in_4bit": True,
+        "full_finetuning": False,
+        "image_size": 384,
+        "max_seq_length": 1024,
+        "batch_size": 1,
+        "grad_accum": 8,
+        "run_full_inference": False,
+    },
+    "qwen35_9b_unsloth": {
+        "model_id": "unsloth/Qwen3.5-9B",
+        "load_in_16bit": True,
+        "load_in_4bit": False,
+        "full_finetuning": False,
+        "image_size": 384,
+        "max_seq_length": 1024,
+        "batch_size": 1,
+        "grad_accum": 4,
+        "run_full_inference": True,
+    },
+    "legacy_qwen3_vl_2b": {
+        "model_id": "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit",
+        "load_in_16bit": False,
+        "load_in_4bit": True,
+        "full_finetuning": False,
+        "image_size": 384,
+        "max_seq_length": 1024,
+        "batch_size": 1,
+        "grad_accum": 8,
+        "run_full_inference": False,
+    },
+}
+
+MODEL_PROFILE = USER_MODEL_PROFILE
+if MODEL_PROFILE not in MODEL_PROFILES:
+    raise ValueError(
+        f"Unsupported USER_MODEL_PROFILE: {MODEL_PROFILE}. "
+        f"Choose one of: {', '.join(sorted(MODEL_PROFILES))}"
+    )
+
+selected_profile = MODEL_PROFILES[MODEL_PROFILE]
+TRAIN_MODE = USER_TRAIN_MODE
+if TRAIN_MODE not in ["smoke", "train_valid_split", "train_all_for_submission"]:
+    raise ValueError(
+        f"Unsupported USER_TRAIN_MODE: {TRAIN_MODE}. "
+        "Choose one of: smoke, train_valid_split, train_all_for_submission"
+    )
+
+MODEL_ID = selected_profile["model_id"]
+IMAGE_SIZE = (
+    selected_profile["image_size"] if USER_IMAGE_SIZE is None else USER_IMAGE_SIZE
 )
-IMAGE_SIZE = 384
 MAX_NEW_TOKENS = 2
-MAX_SEQ_LENGTH = 1024
+MAX_SEQ_LENGTH = selected_profile["max_seq_length"]
 SEED = 42
 
 PREPROCESS_IMAGES = True
 PREPROCESS_MODE = "keep_ratio_pad"
-BUILD_PREPROCESSED_CACHE = True
-PREPROCESS_PREVIEW_SAMPLES = 6
-CENTER_CROP_RATIO = 0.92
+BUILD_PREPROCESSED_CACHE = USER_BUILD_PREPROCESSED_CACHE
+PREPROCESS_PREVIEW_SAMPLES = USER_PREPROCESS_PREVIEW_SAMPLES
+CENTER_CROP_RATIO = USER_CENTER_CROP_RATIO
 
-USE_SUBSAMPLE = True
-SUBSAMPLE_SIZE = 200
+USE_SUBSAMPLE = TRAIN_MODE == "smoke"
+SUBSAMPLE_SIZE = USER_SUBSAMPLE_SIZE
 
-NUM_EPOCHS = 1
-LR = 1e-4
-GRAD_ACCUM = 8
-BATCH_SIZE = 1
+NUM_EPOCHS = USER_NUM_EPOCHS
+LR = USER_LR
+GRAD_ACCUM = (
+    selected_profile["grad_accum"] if USER_GRAD_ACCUM is None else USER_GRAD_ACCUM
+)
+BATCH_SIZE = (
+    selected_profile["batch_size"] if USER_BATCH_SIZE is None else USER_BATCH_SIZE
+)
 WARMUP_RATIO = 0.03
-RUN_FULL_INFERENCE = False
+RUN_FULL_INFERENCE = TRAIN_MODE == "train_all_for_submission"
+SAVE_CHECKPOINTS_EACH_EPOCH = USER_SAVE_CHECKPOINTS_EACH_EPOCH
+SAVE_TOTAL_LIMIT = USER_SAVE_TOTAL_LIMIT
+SAVE_FINAL_MODEL = USER_SAVE_FINAL_MODEL
+SAVE_STRATEGY = "epoch" if SAVE_CHECKPOINTS_EACH_EPOCH else "no"
 
-LOAD_IN_16BIT = False
-LOAD_IN_4BIT = True
-FULL_FINETUNING = False
+LOAD_IN_16BIT = selected_profile["load_in_16bit"]
+LOAD_IN_4BIT = selected_profile["load_in_4bit"]
+FULL_FINETUNING = selected_profile["full_finetuning"]
 
 LORA_R = 16
 LORA_ALPHA = 16
@@ -298,6 +413,21 @@ FINETUNE_MLP_MODULES = True
 random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
+
+print("Model profile:", MODEL_PROFILE)
+print("Model id:", MODEL_ID)
+print("Train mode:", TRAIN_MODE)
+print("Use subsample:", USE_SUBSAMPLE)
+print("Subsample size:", SUBSAMPLE_SIZE if USE_SUBSAMPLE else "not_used")
+print("Num epochs:", NUM_EPOCHS)
+print("Image size:", IMAGE_SIZE)
+print("Center crop ratio:", CENTER_CROP_RATIO)
+print("Load in 16bit:", LOAD_IN_16BIT)
+print("Load in 4bit:", LOAD_IN_4BIT)
+print("Run full inference:", RUN_FULL_INFERENCE)
+print("Save checkpoints each epoch:", SAVE_CHECKPOINTS_EACH_EPOCH)
+print("Save total limit:", SAVE_TOTAL_LIMIT)
+print("Save final model:", SAVE_FINAL_MODEL)
 
 # %% [markdown]
 # ## Training Paths
@@ -328,6 +458,7 @@ SUBMISSION_PATH = PREDICTIONS_DIR / "submission.csv"
 VALID_TXT_PATH = VALID_DIR / "epoch_01_valid.txt"
 VALID_CSV_PATH = VALID_DIR / "epoch_01_valid.csv"
 VALID_TYPE_CSV_PATH = VALID_DIR / "epoch_01_question_type_accuracy.csv"
+VALID_CONCEPT_CSV_PATH = VALID_DIR / "epoch_01_concept_accuracy.csv"
 VALID_ERRORS_CSV_PATH = VALID_DIR / "epoch_01_errors.csv"
 VALID_SAMPLES_TXT_PATH = VALID_DIR / "epoch_01_samples.txt"
 
@@ -483,6 +614,14 @@ QUESTION_TYPE_PATTERNS = {
     "classification": r"분류|종류|무엇인가요|무엇입니까",
 }
 
+CONCEPT_KEYWORDS = {
+    "플라스틱": ["플라스틱", "페트", "pet", "비닐"],
+    "종이": ["종이", "골판지", "박스", "상자", "봉투", "팩"],
+    "유리": ["유리"],
+    "금속": ["금속", "캔", "알루미늄"],
+    "스티로폼": ["스티로폼"],
+}
+
 SYSTEM_INSTRUCT = (
     "You are a helpful visual question answering assistant. "
     "Answer using exactly one lowercase letter among a, b, c, or d. No explanation."
@@ -503,6 +642,42 @@ def build_mc_prompt(question: str, a: str, b: str, c: str, d: str) -> str:
         f"(a) {a}\n(b) {b}\n(c) {c}\n(d) {d}\n\n"
         "정답을 반드시 a, b, c, d 중 하나의 소문자 한 글자로만 출력하세요."
     )
+
+
+def extract_concepts(text: str) -> list[str]:
+    normalized = str(text).strip().lower()
+    matched = []
+    for concept, keywords in CONCEPT_KEYWORDS.items():
+        if any(keyword.lower() in normalized for keyword in keywords):
+            matched.append(concept)
+    return matched
+
+
+def get_choice_text(row: pd.Series, choice: str) -> str:
+    choice = str(choice).strip().lower()
+    if choice not in ["a", "b", "c", "d"]:
+        return ""
+    return str(row[choice]).strip()
+
+
+def configure_processor_image_size(processor: Any, image_size: int) -> None:
+    image_processor = getattr(processor, "image_processor", None)
+    if image_processor is None:
+        return
+
+    target_pixels = image_size * image_size
+    if hasattr(image_processor, "size"):
+        try:
+            image_processor.size = {
+                "shortest_edge": target_pixels,
+                "longest_edge": target_pixels,
+            }
+        except Exception:
+            pass
+    if hasattr(image_processor, "min_pixels"):
+        image_processor.min_pixels = target_pixels
+    if hasattr(image_processor, "max_pixels"):
+        image_processor.max_pixels = target_pixels
 
 
 def extract_choice(text: str) -> str:
@@ -578,6 +753,8 @@ def save_config(train_size: int, valid_size: int) -> None:
         f.write(f"base_run_name: {BASE_RUN_NAME}\n")
         f.write(f"experiment_purpose: {EXPERIMENT_PURPOSE}\n")
         f.write(f"changed_fields: {CHANGED_FIELDS}\n")
+        f.write(f"model_profile: {MODEL_PROFILE}\n")
+        f.write(f"train_mode: {TRAIN_MODE}\n")
         f.write(f"model_id: {MODEL_ID}\n")
         f.write(f"image_size: {IMAGE_SIZE}\n")
         f.write(f"center_crop_ratio: {CENTER_CROP_RATIO}\n")
@@ -587,6 +764,9 @@ def save_config(train_size: int, valid_size: int) -> None:
         f.write(f"learning_rate: {LR}\n")
         f.write(f"grad_accum: {GRAD_ACCUM}\n")
         f.write(f"batch_size: {BATCH_SIZE}\n")
+        f.write(f"save_strategy: {SAVE_STRATEGY}\n")
+        f.write(f"save_total_limit: {SAVE_TOTAL_LIMIT}\n")
+        f.write(f"save_final_model: {SAVE_FINAL_MODEL}\n")
         f.write(f"warmup_ratio: {WARMUP_RATIO}\n")
         f.write(f"seed: {SEED}\n")
         f.write(f"use_subsample: {USE_SUBSAMPLE}\n")
@@ -659,9 +839,15 @@ if USE_SUBSAMPLE:
         n=min(SUBSAMPLE_SIZE, len(train_df)), random_state=SEED
     ).reset_index(drop=True)
 
-split_index = int(len(train_df) * 0.9)
-train_subset = train_df.iloc[:split_index].reset_index(drop=True)
-valid_subset = train_df.iloc[split_index:].reset_index(drop=True)
+if TRAIN_MODE in ["smoke", "train_valid_split"]:
+    split_index = int(len(train_df) * 0.9)
+    train_subset = train_df.iloc[:split_index].reset_index(drop=True)
+    valid_subset = train_df.iloc[split_index:].reset_index(drop=True)
+else:
+    train_subset = train_df.reset_index(drop=True)
+    valid_subset = train_df.iloc[0:0].copy().reset_index(drop=True)
+
+HAS_VALID_SPLIT = len(valid_subset) > 0
 
 if PREPROCESS_IMAGES and BUILD_PREPROCESSED_CACHE:
     cache_paths = train_subset["path"].tolist() + valid_subset["path"].tolist()
@@ -688,11 +874,14 @@ if PREPROCESS_IMAGES and not HAS_PREPROCESSED_CACHE:
 print(f"Train rows used: {len(train_df):,}")
 print(f"Train subset: {len(train_subset):,}")
 print(f"Valid subset: {len(valid_subset):,}")
-print(
-    "Train/valid split ratio:",
-    f"{len(train_subset)}:{len(valid_subset)}",
-    f"(~{len(train_subset) / max(len(train_df), 1):.1%}:{len(valid_subset) / max(len(train_df), 1):.1%})",
-)
+if HAS_VALID_SPLIT:
+    print(
+        "Train/valid split ratio:",
+        f"{len(train_subset)}:{len(valid_subset)}",
+        f"(~{len(train_subset) / max(len(train_df), 1):.1%}:{len(valid_subset) / max(len(train_df), 1):.1%})",
+    )
+else:
+    print("Train mode uses all train rows for fitting. Validation is skipped.")
 print(f"Test rows: {len(test_df):,}")
 
 # %% [markdown]
@@ -718,7 +907,7 @@ save_config(train_size=len(train_subset), valid_size=len(valid_subset))
 #
 # 기본값은 `unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit` 입니다.
 # T4 MVP에서는 Unsloth가 직접 제공하는 vision 4bit 체크포인트를 우선 사용합니다.
-# 실제 Unsloth Vision 로딩이 가능한 체크포인트명이 다르면 Colab에서 `UNSLOTH_VQA_MODEL_ID` 환경변수로 덮어쓸 수 있습니다.
+# 모델 전환은 상단 `USER_MODEL_PROFILE` 값을 바꿔서 진행합니다.
 
 # %%
 model, processor = FastVisionModel.from_pretrained(
@@ -728,6 +917,9 @@ model, processor = FastVisionModel.from_pretrained(
     load_in_16bit=LOAD_IN_16BIT,
     full_finetuning=FULL_FINETUNING,
 )
+
+configure_processor_image_size(processor, IMAGE_SIZE)
+print("Configured processor image size:", IMAGE_SIZE)
 
 model = FastVisionModel.get_peft_model(
     model,
@@ -748,10 +940,22 @@ model = FastVisionModel.get_peft_model(
 
 # %%
 train_records = [
-    convert_row_to_messages(row, train=True) for _, row in train_subset.iterrows()
+    convert_row_to_messages(row, train=True)
+    for _, row in tqdm(
+        train_subset.iterrows(),
+        total=len(train_subset),
+        desc="Build train dataset",
+        unit="sample",
+    )
 ]
 valid_records = [
-    convert_row_to_messages(row, train=True) for _, row in valid_subset.iterrows()
+    convert_row_to_messages(row, train=True)
+    for _, row in tqdm(
+        valid_subset.iterrows(),
+        total=len(valid_subset),
+        desc="Build valid dataset",
+        unit="sample",
+    )
 ]
 
 train_dataset = HFDataset.from_list(train_records)
@@ -761,7 +965,7 @@ data_collator = UnslothVisionDataCollator(
     model,
     processor,
     max_seq_length=MAX_SEQ_LENGTH,
-    resize="min",
+    resize=IMAGE_SIZE,
     train_on_responses_only=False,
     completion_only_loss=True,
 )
@@ -770,6 +974,8 @@ try:
     _sanity_batch = data_collator([train_records[0]])
     print("Collator smoke check passed.")
     print({k: tuple(v.shape) for k, v in _sanity_batch.items() if hasattr(v, "shape")})
+    if "image_grid_thw" in _sanity_batch:
+        print("image_grid_thw values:", _sanity_batch["image_grid_thw"].tolist())
 except Exception as exc:
     raise RuntimeError(
         "Collator smoke check failed before training. Reduce IMAGE_SIZE further or increase MAX_SEQ_LENGTH."
@@ -796,7 +1002,8 @@ trainer = SFTTrainer(
         learning_rate=LR,
         warmup_ratio=WARMUP_RATIO,
         logging_steps=1,
-        save_strategy="no",
+        save_strategy=SAVE_STRATEGY,
+        save_total_limit=SAVE_TOTAL_LIMIT,
         eval_strategy="no",
         optim="adamw_torch",
         seed=SEED,
@@ -818,127 +1025,189 @@ train_loss = float(train_result.training_loss)
 # ## Validation Loss
 
 # %%
-valid_loader = DataLoader(
-    valid_dataset,
-    batch_size=1,
-    shuffle=False,
-    collate_fn=data_collator,
-    num_workers=0,
-)
+valid_loss = 0.0
+valid_accuracy = 0.0
+valid_predictions = []
 
-model.eval()
-FastVisionModel.for_inference(model)
+if HAS_VALID_SPLIT:
+    valid_loader = DataLoader(
+        valid_dataset,
+        batch_size=1,
+        shuffle=False,
+        collate_fn=data_collator,
+        num_workers=0,
+    )
 
-valid_loss_sum = 0.0
-valid_steps = 0
-with torch.no_grad():
-    for batch in tqdm(valid_loader, desc="Valid loss", unit="batch"):
-        batch = {k: v.to("cuda") for k, v in batch.items()}
-        outputs = model(**batch)
-        valid_loss_sum += float(outputs.loss.item())
-        valid_steps += 1
+    model.eval()
+    FastVisionModel.for_inference(model)
 
-valid_loss = valid_loss_sum / valid_steps if valid_steps else 0.0
-print("Valid loss:", valid_loss)
+    valid_loss_sum = 0.0
+    valid_steps = 0
+    with torch.no_grad():
+        for batch in tqdm(valid_loader, desc="Valid loss", unit="batch"):
+            batch = {k: v.to("cuda") for k, v in batch.items()}
+            outputs = model(**batch)
+            valid_loss_sum += float(outputs.loss.item())
+            valid_steps += 1
+
+    valid_loss = valid_loss_sum / valid_steps if valid_steps else 0.0
+    print("Valid loss:", valid_loss)
+else:
+    print("Skipping validation loss because train mode is train_all_for_submission.")
 
 # %% [markdown]
 # ## Validation Generation
 
 # %%
-valid_predictions = []
-type_correct = defaultdict(int)
-type_total = defaultdict(int)
-correct = 0
+if HAS_VALID_SPLIT:
+    type_correct = defaultdict(int)
+    type_total = defaultdict(int)
+    concept_correct = defaultdict(int)
+    concept_total = defaultdict(int)
+    correct = 0
 
-for _, row in tqdm(
-    valid_subset.iterrows(),
-    total=len(valid_subset),
-    desc="Valid generate",
-    unit="sample",
-):
-    pred, raw_text = generate_choice(model, processor, row)
-    answer = str(row["answer"]).strip().lower()
-    question_type = classify_question_type(row["question"])
-    is_correct = pred == answer
+    for _, row in tqdm(
+        valid_subset.iterrows(),
+        total=len(valid_subset),
+        desc="Valid generate",
+        unit="sample",
+    ):
+        pred, raw_text = generate_choice(model, processor, row)
+        answer = str(row["answer"]).strip().lower()
+        question_type = classify_question_type(row["question"])
+        is_correct = pred == answer
+        answer_choice_text = get_choice_text(row, answer)
+        pred_choice_text = get_choice_text(row, pred)
+        answer_concepts = extract_concepts(answer_choice_text)
+        pred_concepts = extract_concepts(pred_choice_text)
 
-    correct += int(is_correct)
-    type_total[question_type] += 1
-    type_correct[question_type] += int(is_correct)
+        correct += int(is_correct)
+        type_total[question_type] += 1
+        type_correct[question_type] += int(is_correct)
 
-    valid_predictions.append(
-        {
-            "id": row["id"],
-            "question_type": question_type,
-            "question": row["question"],
-            "pred": pred,
-            "answer": answer,
-            "correct": is_correct,
-            "raw_text": raw_text.replace("\n", "\\n"),
-        }
-    )
+        if question_type in ["material", "classification"]:
+            for concept in answer_concepts:
+                concept_total[concept] += 1
+                concept_correct[concept] += int(is_correct)
 
-valid_accuracy = correct / len(valid_predictions) if valid_predictions else 0.0
-type_acc_rows = []
-for question_type in sorted(type_total):
-    type_acc_rows.append(
-        {
-            "question_type": question_type,
-            "correct": type_correct[question_type],
-            "total": type_total[question_type],
-            "accuracy": round(
-                type_correct[question_type] / type_total[question_type], 4
-            ),
-        }
-    )
-
-valid_df = pd.DataFrame(valid_predictions)
-type_acc_df = pd.DataFrame(type_acc_rows)
-errors_df = valid_df.loc[~valid_df["correct"]].reset_index(drop=True)
-
-valid_df.to_csv(VALID_CSV_PATH, index=False, encoding="utf-8-sig")
-type_acc_df.to_csv(VALID_TYPE_CSV_PATH, index=False, encoding="utf-8-sig")
-errors_df.to_csv(VALID_ERRORS_CSV_PATH, index=False, encoding="utf-8-sig")
-
-with VALID_TXT_PATH.open("w", encoding="utf-8") as f:
-    f.write(f"epoch: {NUM_EPOCHS}\n")
-    f.write(f"train_loss: {train_loss:.4f}\n")
-    f.write(f"valid_size: {len(valid_predictions)}\n")
-    f.write(f"valid_loss: {valid_loss:.4f}\n")
-    f.write(f"valid_accuracy: {valid_accuracy:.4f}\n")
-
-sample_lines = []
-for item in valid_predictions[:10]:
-    sample_lines.append(
-        " | ".join(
-            [
-                f"id={item['id']}",
-                f"type={item['question_type']}",
-                f"pred={item['pred']}",
-                f"answer={item['answer']}",
-                f"correct={item['correct']}",
-                f"question={item['question']}",
-            ]
+        valid_predictions.append(
+            {
+                "id": row["id"],
+                "question_type": question_type,
+                "question": row["question"],
+                "pred": pred,
+                "answer": answer,
+                "pred_choice_text": pred_choice_text,
+                "answer_choice_text": answer_choice_text,
+                "pred_concepts": "|".join(pred_concepts),
+                "answer_concepts": "|".join(answer_concepts),
+                "correct": is_correct,
+                "raw_text": raw_text.replace("\n", "\\n"),
+            }
         )
-    )
-VALID_SAMPLES_TXT_PATH.write_text("\n".join(sample_lines), encoding="utf-8")
 
-write_summary(
-    train_loss=train_loss, valid_loss=valid_loss, valid_accuracy=valid_accuracy
-)
-print("Valid accuracy:", valid_accuracy)
-print("Valid CSV saved:", VALID_CSV_PATH)
-print("Valid summary TXT saved:", VALID_TXT_PATH)
-print("Valid samples TXT saved:", VALID_SAMPLES_TXT_PATH)
-print("Valid question-type CSV saved:", VALID_TYPE_CSV_PATH)
-print("Valid errors CSV saved:", VALID_ERRORS_CSV_PATH)
+    valid_accuracy = correct / len(valid_predictions) if valid_predictions else 0.0
+    type_acc_rows = []
+    for question_type in sorted(type_total):
+        type_acc_rows.append(
+            {
+                "question_type": question_type,
+                "correct": type_correct[question_type],
+                "total": type_total[question_type],
+                "accuracy": round(
+                    type_correct[question_type] / type_total[question_type], 4
+                ),
+            }
+        )
+
+    concept_acc_rows = []
+    for concept in sorted(concept_total):
+        concept_acc_rows.append(
+            {
+                "concept": concept,
+                "correct": concept_correct[concept],
+                "total": concept_total[concept],
+                "accuracy": round(concept_correct[concept] / concept_total[concept], 4),
+            }
+        )
+
+    valid_df = pd.DataFrame(valid_predictions)
+    type_acc_df = pd.DataFrame(type_acc_rows)
+    concept_acc_df = pd.DataFrame(concept_acc_rows)
+    errors_df = valid_df.loc[~valid_df["correct"]].reset_index(drop=True)
+
+    valid_df.to_csv(VALID_CSV_PATH, index=False, encoding="utf-8-sig")
+    type_acc_df.to_csv(VALID_TYPE_CSV_PATH, index=False, encoding="utf-8-sig")
+    concept_acc_df.to_csv(VALID_CONCEPT_CSV_PATH, index=False, encoding="utf-8-sig")
+    errors_df.to_csv(VALID_ERRORS_CSV_PATH, index=False, encoding="utf-8-sig")
+
+    with VALID_TXT_PATH.open("w", encoding="utf-8") as f:
+        f.write(f"epoch: {NUM_EPOCHS}\n")
+        f.write(f"train_mode: {TRAIN_MODE}\n")
+        f.write(f"train_loss: {train_loss:.4f}\n")
+        f.write(f"valid_size: {len(valid_predictions)}\n")
+        f.write(f"valid_loss: {valid_loss:.4f}\n")
+        f.write(f"valid_accuracy: {valid_accuracy:.4f}\n")
+        if concept_acc_rows:
+            f.write("concept_accuracy:\n")
+            for item in concept_acc_rows:
+                f.write(
+                    f"- {item['concept']}: {item['accuracy']:.4f} ({item['correct']}/{item['total']})\n"
+                )
+
+    sample_lines = []
+    for item in valid_predictions[:10]:
+        sample_lines.append(
+            " | ".join(
+                [
+                    f"id={item['id']}",
+                    f"type={item['question_type']}",
+                    f"pred={item['pred']}",
+                    f"answer={item['answer']}",
+                    f"correct={item['correct']}",
+                    f"question={item['question']}",
+                ]
+            )
+        )
+    VALID_SAMPLES_TXT_PATH.write_text("\n".join(sample_lines), encoding="utf-8")
+
+    write_summary(
+        train_loss=train_loss, valid_loss=valid_loss, valid_accuracy=valid_accuracy
+    )
+    print("Valid accuracy:", valid_accuracy)
+    print("Valid CSV saved:", VALID_CSV_PATH)
+    print("Valid summary TXT saved:", VALID_TXT_PATH)
+    print("Valid samples TXT saved:", VALID_SAMPLES_TXT_PATH)
+    print("Valid question-type CSV saved:", VALID_TYPE_CSV_PATH)
+    print("Valid concept CSV saved:", VALID_CONCEPT_CSV_PATH)
+    print("Valid errors CSV saved:", VALID_ERRORS_CSV_PATH)
+else:
+    VALID_TXT_PATH.write_text(
+        "\n".join(
+            [
+                f"epoch: {NUM_EPOCHS}",
+                f"train_mode: {TRAIN_MODE}",
+                f"train_loss: {train_loss:.4f}",
+                "validation: skipped (train_all_for_submission)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    write_summary(train_loss=train_loss, valid_loss=0.0, valid_accuracy=0.0)
+    print(
+        "Skipping validation generation because train mode is train_all_for_submission."
+    )
 
 # %% [markdown]
 # ## Save Model
 
 # %%
-model.save_pretrained(str(SAVE_DIR))
-processor.save_pretrained(str(SAVE_DIR))
-print("Checkpoint saved:", SAVE_DIR)
+if SAVE_FINAL_MODEL:
+    model.save_pretrained(str(SAVE_DIR))
+    processor.save_pretrained(str(SAVE_DIR))
+    print("Final model saved:", SAVE_DIR)
+else:
+    print("Skipping final model save by user setting.")
 
 # %% [markdown]
 # ## Optional Full Inference

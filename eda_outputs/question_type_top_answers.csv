@@ -1,0 +1,91 @@
+﻿question_type,rank,target_class,count,ratio_within_question_type
+classification,1,플라스틱 병,81,0.0694
+classification,2,플라스틱,76,0.0651
+classification,3,종이 상자,64,0.0548
+classification,4,종이류,51,0.0437
+classification,5,알루미늄 캔,50,0.0428
+classification,6,플라스틱 컵,35,0.03
+classification,7,종이팩,30,0.0257
+classification,8,유리병,28,0.024
+classification,9,종이상자,24,0.0206
+classification,10,플라스틱 컵과 빨대,23,0.0197
+classification,11,종이컵,17,0.0146
+classification,12,플라스틱 용기,17,0.0146
+classification,13,금속,14,0.012
+classification,14,플라스틱 포장재,13,0.0111
+classification,15,플라스틱 포장지,12,0.0103
+color,1,파란색,61,0.2033
+color,2,노란색,26,0.0867
+color,3,분홍색,26,0.0867
+color,4,빨간색,25,0.0833
+color,5,초록색,20,0.0667
+color,6,투명,14,0.0467
+color,7,흰색,14,0.0467
+color,8,보라색,13,0.0433
+color,9,노란색과 분홍색,10,0.0333
+color,10,"뚜껑은 투명, 빨대는 노란색",5,0.0167
+color,11,주황색,5,0.0167
+color,12,검은색,5,0.0167
+color,13,노란색과 초록색,4,0.0133
+color,14,녹색,3,0.01
+color,15,갈색,3,0.01
+count,1,2개,686,0.3929
+count,2,1개,371,0.2125
+count,3,3개,288,0.1649
+count,4,4개,132,0.0756
+count,5,5개,58,0.0332
+count,6,9개,34,0.0195
+count,7,6개,31,0.0178
+count,8,7개,13,0.0074
+count,9,8개,13,0.0074
+count,10,10개 이상,11,0.0063
+count,11,11개,10,0.0057
+count,12,10개,9,0.0052
+count,13,4개 이상,9,0.0052
+count,14,12개,6,0.0034
+count,15,"플라스틱 병 1개, 금속 캔 1개",5,0.0029
+location,1,플라스틱 컵,6,0.0426
+location,2,플라스틱 병,4,0.0284
+location,3,바닥에 놓여 있음,3,0.0213
+location,4,유리병,2,0.0142
+location,5,길가의 낙엽 위,2,0.0142
+location,6,책상 위 중앙,2,0.0142
+location,7,초록색 철망 울타리 앞 바닥에 놓여 있다.,1,0.0071
+location,8,검은 통 안,1,0.0071
+location,9,창문턱 위,1,0.0071
+location,10,검은색 통 위,1,0.0071
+location,11,인도 위,1,0.0071
+location,12,책상 왼쪽 창가에 있다,1,0.0071
+location,13,벽 옆 바닥에 놓여 있다,1,0.0071
+location,14,창문 옆 선반 위,1,0.0071
+location,15,나무 밑 흙 위에 누워 있다.,1,0.0071
+material,1,플라스틱,352,0.2186
+material,2,종이,125,0.0776
+material,3,유리,49,0.0304
+material,4,플라스틱 병,35,0.0217
+material,5,금속,34,0.0211
+material,6,플라스틱 컵,32,0.0199
+material,7,종이 상자,30,0.0186
+material,8,플라스틱 컵과 빨대,29,0.018
+material,9,스티로폼,26,0.0161
+material,10,금속 캔,22,0.0137
+material,11,종이(골판지),19,0.0118
+material,12,알루미늄 캔,16,0.0099
+material,13,종이컵,15,0.0093
+material,14,페트병,14,0.0087
+material,15,투명 플라스틱 컵,13,0.0081
+other,1,노란색,7,0.0642
+other,2,500ml,6,0.055
+other,3,2권,4,0.0367
+other,4,두유,4,0.0367
+other,5,분홍색,4,0.0367
+other,6,플라스틱,4,0.0367
+other,7,얼음,3,0.0275
+other,8,초록색,2,0.0183
+other,9,박스 형태,2,0.0183
+other,10,복숭아 맛,2,0.0183
+other,11,바나나맛,2,0.0183
+other,12,플라스틱 용기,2,0.0183
+other,13,4장,2,0.0183
+other,14,종이상자,2,0.0183
+other,15,제로 슈가 라임 맛,1,0.0092
