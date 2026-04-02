@@ -1,0 +1,14 @@
+workdir: c:\Users\SSAFY\Desktop\2026-ssafy-ai-15-2\colab
+data_root: c:\Users\SSAFY\Desktop\2026-ssafy-ai-15-2\colab
+train_shape: (5073, 8)
+test_shape: (5074, 7)
+checked_image_rows: 500
+existing_images: 500
+missing_images: 0
+width_min: 720
+width_max: 1600
+height_min: 720
+height_max: 1600
+aspect_ratio_min: 0.4500
+aspect_ratio_max: 2.2222
+top_question_types: {'material': 164, 'count': 164, 'classification': 121, 'color': 21, 'location': 19, 'other': 11}

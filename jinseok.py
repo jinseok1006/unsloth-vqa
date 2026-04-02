@@ -95,6 +95,7 @@ DRIVE_ROOT = DRIVE_MOUNT_ROOT / "vqa"
 DRIVE_OUTPUT_ROOT = DRIVE_ROOT / "outputs"
 
 LOCAL_DATA_ROOT = Path("/content/vqa_data")
+LOCAL_PREPROCESSED_ROOT = Path("/content/preprocessed")
 LOCAL_OUTPUT_ROOT = Path("/content/outputs/unsloth_qwen35")
 
 COLAB_ZIP_NAME = "colab.zip"
@@ -118,6 +119,7 @@ print("Drive mount root:", DRIVE_MOUNT_ROOT)
 print("Drive project root:", DRIVE_ROOT)
 print("Expected zip location priority: /content/drive/MyDrive/colab.zip")
 print("Local data root:", LOCAL_DATA_ROOT)
+print("Local preprocessed root:", LOCAL_PREPROCESSED_ROOT)
 print("Local output root:", LOCAL_OUTPUT_ROOT)
 
 # %% [markdown]
@@ -258,6 +260,7 @@ from typing import Any
 
 import pandas as pd
 from PIL import Image
+from PIL import ImageOps
 from datasets import Dataset as HFDataset
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -295,6 +298,10 @@ IMAGE_SIZE = 224
 MAX_NEW_TOKENS = 2
 MAX_SEQ_LENGTH = 1024
 SEED = 42
+
+PREPROCESS_IMAGES = True
+PREPROCESS_MODE = "keep_ratio_pad"
+BUILD_PREPROCESSED_CACHE = False
 
 USE_SUBSAMPLE = True
 SUBSAMPLE_SIZE = 200
@@ -382,6 +389,84 @@ print("Data root:", DATA_ROOT)
 print("Output root:", OUTPUT_ROOT)
 
 # %% [markdown]
+# ## Image Preprocessing
+#
+# 원본 압축 해제는 한 번만 유지하고, 전처리는 설정별 캐시를 재사용합니다.
+
+# %%
+PREPROCESS_CACHE_DIR = LOCAL_PREPROCESSED_ROOT / f"{PREPROCESS_MODE}_{IMAGE_SIZE}"
+PREPROCESS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_image_path(raw_path: str, root: Path | None = None) -> Path:
+    search_root = DATA_ROOT if root is None else root
+    normalized = str(raw_path).replace("\\", "/").lstrip("/")
+    candidate = search_root / normalized
+    if candidate.exists():
+        return candidate
+
+    fallback = search_root / Path(normalized).name
+    if fallback.exists():
+        return fallback
+
+    return candidate
+
+
+def preprocess_image(image: Image.Image) -> Image.Image:
+    image = image.convert("RGB")
+
+    if PREPROCESS_MODE == "force_resize":
+        return image.resize((IMAGE_SIZE, IMAGE_SIZE))
+
+    if PREPROCESS_MODE == "keep_ratio_pad":
+        # Preserve aspect ratio and pad to square to avoid distorting tall/wide objects.
+        return ImageOps.pad(
+            image,
+            (IMAGE_SIZE, IMAGE_SIZE),
+            color=(0, 0, 0),
+            method=Image.Resampling.BICUBIC,
+        )
+
+    raise ValueError(f"Unsupported PREPROCESS_MODE: {PREPROCESS_MODE}")
+
+
+def build_preprocessed_split(split_name: str) -> None:
+    source_dir = DATA_ROOT / split_name
+    target_dir = PREPROCESS_CACHE_DIR / split_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths = sorted(source_dir.glob("*"))
+    print(f"Building preprocessed cache for {split_name}: {len(image_paths)} files")
+
+    for image_path in tqdm(image_paths, desc=f"Preprocess {split_name}", unit="image"):
+        if not image_path.is_file():
+            continue
+        output_path = target_dir / image_path.name
+        if output_path.exists():
+            continue
+
+        with Image.open(image_path) as image:
+            processed = preprocess_image(image)
+            processed.save(output_path)
+
+
+if PREPROCESS_IMAGES and BUILD_PREPROCESSED_CACHE:
+    build_preprocessed_split("train")
+    build_preprocessed_split("test")
+
+HAS_PREPROCESSED_CACHE = (PREPROCESS_CACHE_DIR / "train").exists() and any(
+    (PREPROCESS_CACHE_DIR / "train").glob("*")
+)
+ACTIVE_IMAGE_ROOT = PREPROCESS_CACHE_DIR if HAS_PREPROCESSED_CACHE else DATA_ROOT
+
+print("PREPROCESS_IMAGES:", PREPROCESS_IMAGES)
+print("PREPROCESS_MODE:", PREPROCESS_MODE)
+print("BUILD_PREPROCESSED_CACHE:", BUILD_PREPROCESSED_CACHE)
+print("Preprocess cache dir:", PREPROCESS_CACHE_DIR)
+print("Using preprocessed cache:", HAS_PREPROCESSED_CACHE)
+print("Active image root:", ACTIVE_IMAGE_ROOT)
+
+# %% [markdown]
 # ## Helpers
 
 # %%
@@ -435,22 +520,15 @@ def extract_choice(text: str) -> str:
     return "a"
 
 
-def resolve_image_path(raw_path: str) -> Path:
-    normalized = str(raw_path).replace("\\", "/").lstrip("/")
-    candidate = DATA_ROOT / normalized
-    if candidate.exists():
-        return candidate
-
-    fallback = DATA_ROOT / Path(normalized).name
-    if fallback.exists():
-        return fallback
-
-    raise FileNotFoundError(f"Image file not found for path={raw_path}")
-
-
 def load_resized_image(raw_path: str) -> Image.Image:
-    image = Image.open(resolve_image_path(raw_path)).convert("RGB")
-    return image.resize((IMAGE_SIZE, IMAGE_SIZE))
+    image_path = resolve_image_path(raw_path, root=ACTIVE_IMAGE_ROOT)
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image file not found for path={raw_path}")
+
+    with Image.open(image_path) as image:
+        if ACTIVE_IMAGE_ROOT == PREPROCESS_CACHE_DIR:
+            return image.convert("RGB")
+        return preprocess_image(image)
 
 
 def convert_row_to_messages(row: pd.Series, train: bool = True) -> dict[str, Any]:
@@ -589,7 +667,9 @@ print(
 )
 print(f"Test rows: {len(test_df):,}")
 
-sample_image_path = resolve_image_path(train_subset.iloc[0]["path"])
+sample_image_path = resolve_image_path(
+    train_subset.iloc[0]["path"], root=ACTIVE_IMAGE_ROOT
+)
 print("First train image:", sample_image_path)
 train_df.head(3)
 
