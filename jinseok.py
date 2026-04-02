@@ -198,41 +198,6 @@ RESOLVED_LOCAL_DATA_ROOT = find_dataset_root(LOCAL_DATA_ROOT)
 print("Resolved local dataset root:", RESOLVED_LOCAL_DATA_ROOT)
 
 # %% [markdown]
-# ## Inspect Extracted Dataset Tree
-#
-# 압축 해제 후 `/content` 기준 실제 디렉토리 분포를 간단히 확인합니다.
-
-
-# %%
-def print_tree(root: Path, max_depth: int = 2, max_entries_per_dir: int = 20) -> None:
-    root = root.resolve()
-    print(root)
-
-    def _walk(current: Path, depth: int) -> None:
-        if depth > max_depth:
-            return
-
-        entries = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-        shown_entries = entries[:max_entries_per_dir]
-
-        for entry in shown_entries:
-            indent = "  " * (depth + 1)
-            suffix = "/" if entry.is_dir() else ""
-            print(f"{indent}{entry.name}{suffix}")
-            if entry.is_dir():
-                _walk(entry, depth + 1)
-
-        hidden_count = len(entries) - len(shown_entries)
-        if hidden_count > 0:
-            indent = "  " * (depth + 1)
-            print(f"{indent}... ({hidden_count} more entries)")
-
-    _walk(root, 0)
-
-
-print_tree(RESOLVED_LOCAL_DATA_ROOT, max_depth=2, max_entries_per_dir=20)
-
-# %% [markdown]
 # ## Prepare Active Dataset Root
 #
 # 학습은 `/content` 로컬 경로를 기준으로 진행합니다.
@@ -259,6 +224,7 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import matplotlib.pyplot as plt
 from PIL import Image
 from PIL import ImageOps
 from datasets import Dataset as HFDataset
@@ -294,14 +260,16 @@ MODEL_ID = os.environ.get(
     "UNSLOTH_VQA_MODEL_ID",
     "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit",
 )
-IMAGE_SIZE = 224
+IMAGE_SIZE = 384
 MAX_NEW_TOKENS = 2
 MAX_SEQ_LENGTH = 1024
 SEED = 42
 
 PREPROCESS_IMAGES = True
 PREPROCESS_MODE = "keep_ratio_pad"
-BUILD_PREPROCESSED_CACHE = False
+BUILD_PREPROCESSED_CACHE = True
+PREPROCESS_PREVIEW_SAMPLES = 6
+CENTER_CROP_RATIO = 0.92
 
 USE_SUBSAMPLE = True
 SUBSAMPLE_SIZE = 200
@@ -415,6 +383,14 @@ def resolve_image_path(raw_path: str, root: Path | None = None) -> Path:
 def preprocess_image(image: Image.Image) -> Image.Image:
     image = image.convert("RGB")
 
+    if 0.0 < CENTER_CROP_RATIO < 1.0:
+        width, height = image.size
+        crop_width = max(1, int(width * CENTER_CROP_RATIO))
+        crop_height = max(1, int(height * CENTER_CROP_RATIO))
+        left = max(0, (width - crop_width) // 2)
+        top = max(0, (height - crop_height) // 2)
+        image = image.crop((left, top, left + crop_width, top + crop_height))
+
     if PREPROCESS_MODE == "force_resize":
         return image.resize((IMAGE_SIZE, IMAGE_SIZE))
 
@@ -430,41 +406,70 @@ def preprocess_image(image: Image.Image) -> Image.Image:
     raise ValueError(f"Unsupported PREPROCESS_MODE: {PREPROCESS_MODE}")
 
 
-def build_preprocessed_split(split_name: str) -> None:
-    source_dir = DATA_ROOT / split_name
-    target_dir = PREPROCESS_CACHE_DIR / split_name
-    target_dir.mkdir(parents=True, exist_ok=True)
+def build_preprocessed_cache(image_paths: list[str], desc: str) -> None:
+    unique_paths = sorted(
+        {str(path).replace("\\", "/").lstrip("/") for path in image_paths}
+    )
+    print(f"Building preprocessed cache for {desc}: {len(unique_paths)} files")
 
-    image_paths = sorted(source_dir.glob("*"))
-    print(f"Building preprocessed cache for {split_name}: {len(image_paths)} files")
-
-    for image_path in tqdm(image_paths, desc=f"Preprocess {split_name}", unit="image"):
-        if not image_path.is_file():
-            continue
-        output_path = target_dir / image_path.name
+    for raw_path in tqdm(unique_paths, desc=f"Preprocess {desc}", unit="image"):
+        source_path = resolve_image_path(raw_path, root=DATA_ROOT)
+        output_path = PREPROCESS_CACHE_DIR / raw_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         if output_path.exists():
             continue
 
-        with Image.open(image_path) as image:
+        with Image.open(source_path) as image:
             processed = preprocess_image(image)
             processed.save(output_path)
 
 
-if PREPROCESS_IMAGES and BUILD_PREPROCESSED_CACHE:
-    build_preprocessed_split("train")
-    build_preprocessed_split("test")
+def preview_preprocessed_samples(
+    df: pd.DataFrame,
+    split_name: str,
+    sample_count: int = PREPROCESS_PREVIEW_SAMPLES,
+) -> None:
+    if df.empty:
+        print(f"Skip preview, no rows available for split={split_name}")
+        return
 
-HAS_PREPROCESSED_CACHE = (PREPROCESS_CACHE_DIR / "train").exists() and any(
-    (PREPROCESS_CACHE_DIR / "train").glob("*")
-)
-ACTIVE_IMAGE_ROOT = PREPROCESS_CACHE_DIR if HAS_PREPROCESSED_CACHE else DATA_ROOT
+    sample_count = min(sample_count, len(df))
+    sampled_df = df.sample(n=sample_count, random_state=SEED).reset_index(drop=True)
 
-print("PREPROCESS_IMAGES:", PREPROCESS_IMAGES)
-print("PREPROCESS_MODE:", PREPROCESS_MODE)
-print("BUILD_PREPROCESSED_CACHE:", BUILD_PREPROCESSED_CACHE)
-print("Preprocess cache dir:", PREPROCESS_CACHE_DIR)
-print("Using preprocessed cache:", HAS_PREPROCESSED_CACHE)
-print("Active image root:", ACTIVE_IMAGE_ROOT)
+    fig, axes = plt.subplots(sample_count, 2, figsize=(10, 4 * sample_count))
+    if sample_count == 1:
+        axes = [axes]
+
+    for row_axes, (_, row) in zip(axes, sampled_df.iterrows()):
+        raw_image_path = resolve_image_path(row["path"], root=DATA_ROOT)
+        processed_image_path = resolve_image_path(
+            row["path"], root=PREPROCESS_CACHE_DIR
+        )
+
+        with Image.open(raw_image_path) as raw_image:
+            raw_image = raw_image.convert("RGB")
+            raw_size = raw_image.size
+            row_axes[0].imshow(raw_image)
+            row_axes[0].set_title(
+                f"Original\n{raw_image_path.name} | {raw_size[0]}x{raw_size[1]}"
+            )
+            row_axes[0].axis("off")
+
+        with Image.open(processed_image_path) as processed_image:
+            processed_image = processed_image.convert("RGB")
+            processed_size = processed_image.size
+            row_axes[1].imshow(processed_image)
+            row_axes[1].set_title(
+                f"Preprocessed\n{processed_size[0]}x{processed_size[1]} | {PREPROCESS_MODE}"
+            )
+            row_axes[1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+HAS_PREPROCESSED_CACHE = False
+ACTIVE_IMAGE_ROOT = DATA_ROOT
 
 # %% [markdown]
 # ## Helpers
@@ -575,6 +580,7 @@ def save_config(train_size: int, valid_size: int) -> None:
         f.write(f"changed_fields: {CHANGED_FIELDS}\n")
         f.write(f"model_id: {MODEL_ID}\n")
         f.write(f"image_size: {IMAGE_SIZE}\n")
+        f.write(f"center_crop_ratio: {CENTER_CROP_RATIO}\n")
         f.write(f"max_new_tokens: {MAX_NEW_TOKENS}\n")
         f.write(f"max_seq_length: {MAX_SEQ_LENGTH}\n")
         f.write(f"num_epochs: {NUM_EPOCHS}\n")
@@ -657,6 +663,28 @@ split_index = int(len(train_df) * 0.9)
 train_subset = train_df.iloc[:split_index].reset_index(drop=True)
 valid_subset = train_df.iloc[split_index:].reset_index(drop=True)
 
+if PREPROCESS_IMAGES and BUILD_PREPROCESSED_CACHE:
+    cache_paths = train_subset["path"].tolist() + valid_subset["path"].tolist()
+    if RUN_FULL_INFERENCE:
+        cache_paths.extend(test_df["path"].tolist())
+    build_preprocessed_cache(cache_paths, desc="active train/valid split")
+
+HAS_PREPROCESSED_CACHE = any(PREPROCESS_CACHE_DIR.rglob("*"))
+ACTIVE_IMAGE_ROOT = PREPROCESS_CACHE_DIR if HAS_PREPROCESSED_CACHE else DATA_ROOT
+
+print("PREPROCESS_IMAGES:", PREPROCESS_IMAGES)
+print("PREPROCESS_MODE:", PREPROCESS_MODE)
+print("BUILD_PREPROCESSED_CACHE:", BUILD_PREPROCESSED_CACHE)
+print("Preprocess cache dir:", PREPROCESS_CACHE_DIR)
+print("Using preprocessed cache:", HAS_PREPROCESSED_CACHE)
+print("Active image root:", ACTIVE_IMAGE_ROOT)
+
+if PREPROCESS_IMAGES and not HAS_PREPROCESSED_CACHE:
+    raise RuntimeError(
+        "Image preprocessing is enabled but the preprocessed cache was not created. "
+        "Check BUILD_PREPROCESSED_CACHE and the selected dataset split."
+    )
+
 print(f"Train rows used: {len(train_df):,}")
 print(f"Train subset: {len(train_subset):,}")
 print(f"Valid subset: {len(valid_subset):,}")
@@ -666,6 +694,14 @@ print(
     f"(~{len(train_subset) / max(len(train_df), 1):.1%}:{len(valid_subset) / max(len(train_df), 1):.1%})",
 )
 print(f"Test rows: {len(test_df):,}")
+
+# %% [markdown]
+# ## Preview Preprocessed Samples
+#
+# 실제 학습에 사용하는 train subset 기준으로 원본과 전처리 결과를 함께 확인합니다.
+
+# %%
+preview_preprocessed_samples(train_subset, split_name="train")
 
 sample_image_path = resolve_image_path(
     train_subset.iloc[0]["path"], root=ACTIVE_IMAGE_ROOT
