@@ -657,26 +657,6 @@ def get_choice_text(row: pd.Series, choice: str) -> str:
     return str(row[choice]).strip()
 
 
-def configure_processor_image_size(processor: Any, image_size: int) -> None:
-    image_processor = getattr(processor, "image_processor", None)
-    if image_processor is None:
-        return
-
-    target_pixels = image_size * image_size
-    if hasattr(image_processor, "size"):
-        try:
-            image_processor.size = {
-                "shortest_edge": target_pixels,
-                "longest_edge": target_pixels,
-            }
-        except Exception:
-            pass
-    if hasattr(image_processor, "min_pixels"):
-        image_processor.min_pixels = target_pixels
-    if hasattr(image_processor, "max_pixels"):
-        image_processor.max_pixels = target_pixels
-
-
 def extract_choice(text: str) -> str:
     text = str(text).strip().lower()
     if not text:
@@ -915,8 +895,7 @@ model, processor = FastVisionModel.from_pretrained(
     full_finetuning=FULL_FINETUNING,
 )
 
-configure_processor_image_size(processor, IMAGE_SIZE)
-print("Configured processor image size:", IMAGE_SIZE)
+print("Using preprocessed image size:", IMAGE_SIZE)
 
 model = FastVisionModel.get_peft_model(
     model,
