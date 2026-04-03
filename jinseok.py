@@ -75,10 +75,8 @@ drive.mount("/content/drive")
 # 권장 Drive 구조:
 #
 # ```text
-# /content/drive/MyDrive/
+# /content/drive/MyDrive/ai-ssafy/
 #   colab.zip
-#
-# /content/drive/MyDrive/vqa/
 #   outputs/
 #
 # /content/vqa_data/
@@ -91,12 +89,11 @@ drive.mount("/content/drive")
 
 # %%
 DRIVE_MOUNT_ROOT = Path("/content/drive/MyDrive")
-DRIVE_ROOT = DRIVE_MOUNT_ROOT / "vqa"
+DRIVE_ROOT = DRIVE_MOUNT_ROOT / "ai-ssafy"
 DRIVE_OUTPUT_ROOT = DRIVE_ROOT / "outputs"
 
 LOCAL_DATA_ROOT = Path("/content/vqa_data")
 LOCAL_PREPROCESSED_ROOT = Path("/content/preprocessed")
-LOCAL_OUTPUT_ROOT = Path("/content/outputs/unsloth_qwen35")
 
 COLAB_ZIP_NAME = "colab.zip"
 
@@ -106,21 +103,21 @@ SAMPLE_SUBMISSION_NAME = "sample_submission.csv"
 
 STAGE_TO_LOCAL = True
 
+DRIVE_ROOT.mkdir(parents=True, exist_ok=True)
 DRIVE_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-LOCAL_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 os.environ["UNSLOTH_QWEN35_COLAB_DATA_ROOT"] = str(LOCAL_DATA_ROOT)
-os.environ["UNSLOTH_QWEN35_COLAB_OUTPUT_ROOT"] = str(LOCAL_OUTPUT_ROOT)
+os.environ["UNSLOTH_QWEN35_COLAB_OUTPUT_ROOT"] = str(DRIVE_OUTPUT_ROOT)
 os.environ["HF_HOME"] = "/content/.cache/huggingface"
 os.environ["TRANSFORMERS_CACHE"] = "/content/.cache/huggingface/transformers"
 os.environ["HF_DATASETS_CACHE"] = "/content/.cache/huggingface/datasets"
 
 print("Drive mount root:", DRIVE_MOUNT_ROOT)
 print("Drive project root:", DRIVE_ROOT)
-print("Expected zip location priority: /content/drive/MyDrive/colab.zip")
+print("Expected zip location priority:", DRIVE_ROOT / COLAB_ZIP_NAME)
 print("Local data root:", LOCAL_DATA_ROOT)
 print("Local preprocessed root:", LOCAL_PREPROCESSED_ROOT)
-print("Local output root:", LOCAL_OUTPUT_ROOT)
+print("Drive output root:", DRIVE_OUTPUT_ROOT)
 
 # %% [markdown]
 # ## Extract Dataset In Colab Local Storage
@@ -191,7 +188,7 @@ def find_dataset_root(search_root: Path) -> Path:
     )
 
 
-COLAB_ZIP_PATH = find_file_by_name(DRIVE_MOUNT_ROOT, COLAB_ZIP_NAME)
+COLAB_ZIP_PATH = find_file_by_name(DRIVE_ROOT, COLAB_ZIP_NAME)
 print("Resolved zip path:", COLAB_ZIP_PATH)
 unzip_if_needed(COLAB_ZIP_PATH, LOCAL_DATA_ROOT)
 RESOLVED_LOCAL_DATA_ROOT = find_dataset_root(LOCAL_DATA_ROOT)
@@ -1243,6 +1240,8 @@ DRIVE_RUN_DIR = DRIVE_RUNS_ROOT / RUN_NAME
 
 if DRIVE_RUN_DIR.exists():
     print(f"Drive run already exists: {DRIVE_RUN_DIR}")
+elif RUN_DIR.resolve() == DRIVE_RUN_DIR.resolve():
+    print(f"Run already stored under Drive: {DRIVE_RUN_DIR}")
 else:
     shutil.copytree(RUN_DIR, DRIVE_RUN_DIR)
     print(f"Copied run to Drive: {DRIVE_RUN_DIR}")
