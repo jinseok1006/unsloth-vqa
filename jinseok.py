@@ -1237,22 +1237,3 @@ elif RUN_DIR.resolve() == DRIVE_RUN_DIR.resolve():
 else:
     shutil.copytree(RUN_DIR, DRIVE_RUN_DIR)
     print(f"Copied run to Drive: {DRIVE_RUN_DIR}")
-
-# %% [markdown]
-# ## Release Colab Runtime
-#
-# smoke 모드가 아닐 때는 작업 종료 후 Colab 런타임을 반환합니다.
-
-# %%
-if TRAIN_MODE in ["train_valid_split", "train_all_for_submission"]:
-    try:
-        from google.colab import runtime
-
-        print("Releasing Colab runtime after completed run.")
-        runtime.unassign()
-    except ImportError:
-        print(
-            "google.colab.runtime is unavailable outside Colab. Skipping runtime release."
-        )
-else:
-    print("Keeping Colab runtime alive because TRAIN_MODE is smoke.")
