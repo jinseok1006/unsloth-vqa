@@ -219,12 +219,12 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 from PIL import ImageOps
-from datasets import Dataset as HFDataset
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from unsloth import FastVisionModel
@@ -267,9 +267,9 @@ USER_TRAIN_MODE = "smoke"
 USER_SUBSAMPLE_SIZE = 200
 # smoke 모드에서만 사용합니다.
 
-# type: int | None
-USER_IMAGE_SIZE = None
-# None이면 모델 프로파일 기본값을 사용합니다.
+# type: int
+USER_IMAGE_SIZE = 384
+# 입력 이미지 전처리 크기입니다. 현재 기본값은 384입니다.
 
 # type: float
 USER_CENTER_CROP_RATIO = 0.92
@@ -438,7 +438,10 @@ TEST_CSV = DATA_ROOT / TEST_CSV_NAME
 SAMPLE_SUBMISSION_CSV = DATA_ROOT / SAMPLE_SUBMISSION_NAME
 
 MODEL_TAG = MODEL_ID.split("/")[-1].lower().replace(".", "_").replace("-", "_")
-RUN_NAME = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{MODEL_TAG}_colab_ep{NUM_EPOCHS}_lr{LR:g}".replace(
+KST = ZoneInfo("Asia/Seoul")
+RUN_STARTED_AT_KST = datetime.now(KST)
+RUN_STARTED_AT_KST_TEXT = RUN_STARTED_AT_KST.strftime("%Y-%m-%d %H:%M:%S KST")
+RUN_NAME = f"{RUN_STARTED_AT_KST.strftime('%Y%m%d_%H%M%S')}_KST_{MODEL_TAG}_colab_ep{NUM_EPOCHS}_lr{LR:g}".replace(
     ".",
     "_",
 )
@@ -713,19 +716,23 @@ def convert_row_to_messages(row: pd.Series, train: bool = True) -> dict[str, Any
 
 
 class VisionRecordDataset(Dataset):
-    def __init__(self, records: list[dict[str, Any]]):
-        self.records = records
+    def __init__(self, df: pd.DataFrame, train: bool = True):
+        self.df = df.reset_index(drop=True)
+        self.train = train
 
     def __len__(self) -> int:
-        return len(self.records)
+        return len(self.df)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        return self.records[idx]
+        row = self.df.iloc[idx]
+        return convert_row_to_messages(row, train=self.train)
 
 
 def save_config(train_size: int, valid_size: int) -> None:
     with CONFIG_PATH.open("w", encoding="utf-8") as f:
         f.write(f"run_name: {RUN_NAME}\n")
+        f.write("timezone: KST\n")
+        f.write(f"run_started_at_kst: {RUN_STARTED_AT_KST_TEXT}\n")
         f.write(f"experiment_id: {EXPERIMENT_ID}\n")
         f.write(f"base_run_name: {BASE_RUN_NAME}\n")
         f.write(f"experiment_purpose: {EXPERIMENT_PURPOSE}\n")
@@ -764,6 +771,8 @@ def save_config(train_size: int, valid_size: int) -> None:
 def write_summary(train_loss: float, valid_loss: float, valid_accuracy: float) -> None:
     lines = [
         f"run_name: {RUN_NAME}",
+        "timezone: KST",
+        f"run_started_at_kst: {RUN_STARTED_AT_KST_TEXT}",
         f"train_loss: {train_loss:.4f}",
         f"valid_loss: {valid_loss:.4f}",
         f"valid_accuracy: {valid_accuracy:.4f}",
@@ -915,27 +924,11 @@ model = FastVisionModel.get_peft_model(
 # ## Build Dataset
 
 # %%
-train_records = [
-    convert_row_to_messages(row, train=True)
-    for _, row in tqdm(
-        train_subset.iterrows(),
-        total=len(train_subset),
-        desc="Build train dataset",
-        unit="sample",
-    )
-]
-valid_records = [
-    convert_row_to_messages(row, train=True)
-    for _, row in tqdm(
-        valid_subset.iterrows(),
-        total=len(valid_subset),
-        desc="Build valid dataset",
-        unit="sample",
-    )
-]
+print("Building lazy train dataset...")
+train_dataset = VisionRecordDataset(train_subset, train=True)
 
-train_dataset = HFDataset.from_list(train_records)
-valid_dataset = VisionRecordDataset(valid_records)
+print("Building lazy valid dataset...")
+valid_dataset = VisionRecordDataset(valid_subset, train=True)
 
 data_collator = UnslothVisionDataCollator(
     model,
@@ -946,8 +939,9 @@ data_collator = UnslothVisionDataCollator(
     completion_only_loss=True,
 )
 
+print("Running collator smoke check...")
 try:
-    _sanity_batch = data_collator([train_records[0]])
+    _sanity_batch = data_collator([train_dataset[0]])
     print("Collator smoke check passed.")
     print({k: tuple(v.shape) for k, v in _sanity_batch.items() if hasattr(v, "shape")})
     if "image_grid_thw" in _sanity_batch:
@@ -994,6 +988,7 @@ trainer = SFTTrainer(
     ),
 )
 
+print("Starting training...")
 train_result = trainer.train()
 train_loss = float(train_result.training_loss)
 
