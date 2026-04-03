@@ -91,6 +91,7 @@ drive.mount("/content/drive")
 DRIVE_MOUNT_ROOT = Path("/content/drive/MyDrive")
 DRIVE_ROOT = DRIVE_MOUNT_ROOT / "ai-ssafy"
 DRIVE_OUTPUT_ROOT = DRIVE_ROOT / "outputs"
+# LOCAL_OUTPUT_ROOT = Path("/content/outputs")
 
 LOCAL_DATA_ROOT = Path("/content/vqa_data")
 LOCAL_PREPROCESSED_ROOT = Path("/content/preprocessed")
@@ -105,9 +106,11 @@ STAGE_TO_LOCAL = True
 
 DRIVE_ROOT.mkdir(parents=True, exist_ok=True)
 DRIVE_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+# LOCAL_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 os.environ["UNSLOTH_QWEN35_COLAB_DATA_ROOT"] = str(LOCAL_DATA_ROOT)
 os.environ["UNSLOTH_QWEN35_COLAB_OUTPUT_ROOT"] = str(DRIVE_OUTPUT_ROOT)
+# os.environ["UNSLOTH_QWEN35_COLAB_OUTPUT_ROOT"] = str(LOCAL_OUTPUT_ROOT)
 os.environ["HF_HOME"] = "/content/.cache/huggingface"
 os.environ["TRANSFORMERS_CACHE"] = "/content/.cache/huggingface/transformers"
 os.environ["HF_DATASETS_CACHE"] = "/content/.cache/huggingface/datasets"
@@ -118,6 +121,7 @@ print("Expected zip location priority:", DRIVE_ROOT / COLAB_ZIP_NAME)
 print("Local data root:", LOCAL_DATA_ROOT)
 print("Local preprocessed root:", LOCAL_PREPROCESSED_ROOT)
 print("Drive output root:", DRIVE_OUTPUT_ROOT)
+# print("Local output root:", LOCAL_OUTPUT_ROOT)
 
 # %% [markdown]
 # ## Extract Dataset In Colab Local Storage
@@ -288,6 +292,11 @@ USER_BATCH_SIZE = None
 USER_GRAD_ACCUM = None
 # None이면 모델 프로파일 기본값을 사용합니다.
 
+# type: bool | None
+USER_RUN_FULL_INFERENCE = None
+# None이면 train mode 기본 규칙을 사용합니다.
+# True/False를 넣으면 smoke 포함 모든 모드에서 직접 덮어씁니다.
+
 # trainer checkpoint 저장 설정
 # type: bool
 USER_SAVE_CHECKPOINTS_EACH_EPOCH = False
@@ -387,7 +396,15 @@ BATCH_SIZE = (
     selected_profile["batch_size"] if USER_BATCH_SIZE is None else USER_BATCH_SIZE
 )
 WARMUP_RATIO = 0.03
-RUN_FULL_INFERENCE = TRAIN_MODE == "train_all_for_submission"
+DEFAULT_RUN_FULL_INFERENCE = TRAIN_MODE in [
+    "train_valid_split",
+    "train_all_for_submission",
+]
+RUN_FULL_INFERENCE = (
+    DEFAULT_RUN_FULL_INFERENCE
+    if USER_RUN_FULL_INFERENCE is None
+    else USER_RUN_FULL_INFERENCE
+)
 SAVE_CHECKPOINTS_EACH_EPOCH = USER_SAVE_CHECKPOINTS_EACH_EPOCH
 SAVE_TOTAL_LIMIT = USER_SAVE_TOTAL_LIMIT
 SAVE_FINAL_MODEL = USER_SAVE_FINAL_MODEL
@@ -751,6 +768,7 @@ def save_config(train_size: int, valid_size: int) -> None:
         f.write(f"save_strategy: {SAVE_STRATEGY}\n")
         f.write(f"save_total_limit: {SAVE_TOTAL_LIMIT}\n")
         f.write(f"save_final_model: {SAVE_FINAL_MODEL}\n")
+        f.write(f"run_full_inference: {RUN_FULL_INFERENCE}\n")
         f.write(f"warmup_ratio: {WARMUP_RATIO}\n")
         f.write(f"seed: {SEED}\n")
         f.write(f"use_subsample: {USE_SUBSAMPLE}\n")
